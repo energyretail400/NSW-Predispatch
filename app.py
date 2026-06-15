@@ -14,6 +14,7 @@ from streamlit_autorefresh import st_autorefresh
 from downloader import (
     download_latest_predispatch, get_latest_predispatch_local,
     download_latest_dispatchis, get_latest_dispatchis_local,
+    get_all_dispatchis_today_local, download_all_dispatchis_today,
     download_latest_p5min, get_latest_p5min_local,
 )
 from parser import load_predispatch_region, load_dispatch_price, load_p5min_regionsolution
@@ -62,7 +63,7 @@ def _snapshot() -> dict:
     }
 
 
-def _fetch_all(spinner: bool = False):
+def _fetch_all(spinner: bool = False, bulk_dis: bool = False):
     ctx = st.spinner("Checking NEMWEB...") if spinner else _null()
     with ctx:
         try:
@@ -72,6 +73,11 @@ def _fetch_all(spinner: bool = False):
         for fn in (download_latest_dispatchis, download_latest_p5min):
             try:
                 fn()
+            except Exception:
+                pass
+        if bulk_dis:
+            try:
+                download_all_dispatchis_today()
             except Exception:
                 pass
     return msg
@@ -99,6 +105,20 @@ def _load_dis(path: str) -> pd.DataFrame:
     from pathlib import Path
     return load_dispatch_price(Path(path))
 
+@st.cache_data(show_spinner=False)
+def _load_dis_today(paths: tuple) -> pd.DataFrame:
+    from pathlib import Path
+    dfs = []
+    for p in paths:
+        try:
+            dfs.append(load_dispatch_price(Path(p)))
+        except Exception:
+            pass
+    if not dfs:
+        return pd.DataFrame()
+    df = pd.concat(dfs, ignore_index=True)
+    return df.drop_duplicates(subset=["SETTLEMENTDATE", "REGIONID"])
+
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -107,7 +127,7 @@ with st.sidebar:
     st.divider()
 
     if "nsw_status" not in st.session_state:
-        msg = _fetch_all(spinner=True)
+        msg = _fetch_all(spinner=True, bulk_dis=True)
         st.session_state["nsw_status"] = msg
         st.session_state["_nsw_files"] = _snapshot()
     elif _is_autorefresh:
@@ -172,6 +192,14 @@ try:
     df_dis = _load_dis(str(dis_path)) if dis_path else pd.DataFrame()
 except Exception:
     df_dis = pd.DataFrame()
+
+# Today's realized prices — concatenate all accumulated DispatchIS files
+_today_dis_paths = tuple(str(p) for p in get_all_dispatchis_today_local())
+try:
+    df_actual_today = _load_dis_today(_today_dis_paths)
+    df_actual_today = df_actual_today[df_actual_today["REGION_LABEL"] == REGION].sort_values("SETTLEMENTDATE")
+except Exception:
+    df_actual_today = pd.DataFrame()
 
 actual_rrp = None
 actual_dt  = ""
@@ -282,40 +310,43 @@ st.divider()
 
 # ── Price chart ───────────────────────────────────────────────────────────────
 st.subheader("Forecast Spot Price — NSW")
-st.caption("Solid = 30-min pre-dispatch | Dotted = P5MIN (5-min)")
+st.caption("Dark = realized today (DispatchIS) | Solid = 30-min pre-dispatch | Dotted = P5MIN (5-min)")
 
 fig = go.Figure()
 
+# Realized spot price — today's accumulated DispatchIS intervals
+if not df_actual_today.empty:
+    df_act = df_actual_today.dropna(subset=["RRP"])
+    if not df_act.empty:
+        fig.add_trace(go.Scatter(
+            x=df_act["SETTLEMENTDATE"], y=df_act["RRP"],
+            name="Actual (today)",
+            line=dict(color="#0f172a", width=2),
+            hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>Actual</extra>",
+        ))
+
+# 30-min predispatch forecast
 df_rrp = df_pd.dropna(subset=["RRP"])
 if not df_rrp.empty:
     fig.add_trace(go.Scatter(
         x=df_rrp["PERIODID"], y=df_rrp["RRP"],
-        name="RRP 30min",
+        name="Forecast 30min",
         line=dict(color=COLOUR, width=2.5),
         hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>30min</extra>",
     ))
 
+# P5MIN forecast overlay
 if not df_p5.empty:
     df_p5_rrp = df_p5.dropna(subset=["RRP"])
     if not df_p5_rrp.empty:
         fig.add_trace(go.Scatter(
             x=df_p5_rrp["INTERVAL_DATETIME"], y=df_p5_rrp["RRP"],
-            name="RRP 5min",
+            name="Forecast 5min",
             mode="lines",
             line=dict(color=COLOUR, width=1.5, dash="dot"),
             hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>5min</extra>",
         ))
 
-if actual_rrp is not None:
-    fig.add_hline(
-        y=actual_rrp,
-        line=dict(color="#0f172a", width=1, dash="dash"),
-        annotation_text=f"Actual {actual_dt}: ${actual_rrp:,.2f}/MWh",
-        annotation_position="top left",
-        annotation_font_size=11,
-    )
-
-now = pd.Timestamp.now()
 _shade_colours = {code: _hex_to_rgba(clr, 0.12) for code, clr in PERIOD_COLOURS.items()}
 if not df_pd.empty:
     _min_x = df_pd["PERIODID"].min()
@@ -325,7 +356,7 @@ if not df_pd.empty:
         for code, _, _hours, _desc, sh, eh in PRICE_PERIODS:
             _s = _day + pd.Timedelta(hours=sh)
             _e = _day + pd.Timedelta(hours=eh)
-            if _e <= now or _s >= _max_x:
+            if _e <= _now or _s >= _max_x:
                 continue
             fig.add_vrect(
                 x0=_s, x1=_e,

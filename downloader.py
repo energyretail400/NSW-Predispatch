@@ -166,3 +166,40 @@ def get_latest_dispatchis_local() -> Path | None:
     folder.mkdir(parents=True, exist_ok=True)
     valid = [p for p in folder.glob("PUBLIC_DISPATCHIS_*.zip") if zipfile.is_zipfile(p)]
     return max(valid, key=lambda p: DISPATCHIS_PATTERN.search(p.name).group(1), default=None) if valid else None
+
+
+def get_all_dispatchis_today_local() -> list[Path]:
+    """Return all valid local DispatchIS ZIPs for today (AEST), sorted oldest first."""
+    from datetime import datetime, timezone, timedelta
+    aest_today = datetime.now(tz=timezone(timedelta(hours=10))).strftime("%Y%m%d")
+    folder = INPUT_FOLDER / "DISPATCHIS"
+    folder.mkdir(parents=True, exist_ok=True)
+    files = [
+        p for p in folder.glob("PUBLIC_DISPATCHIS_*.zip")
+        if (m := DISPATCHIS_PATTERN.search(p.name)) and m.group(1).startswith(aest_today)
+        and zipfile.is_zipfile(p)
+    ]
+    return sorted(files, key=lambda p: DISPATCHIS_PATTERN.search(p.name).group(1))
+
+
+def download_all_dispatchis_today() -> int:
+    """Download all available DispatchIS files for today (AEST) not already cached. Returns new file count."""
+    from datetime import datetime, timezone, timedelta
+    aest_today = datetime.now(tz=timezone(timedelta(hours=10))).strftime("%Y%m%d")
+    folder = INPUT_FOLDER / "DISPATCHIS"
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        all_files = _scrape(DISPATCHIS_URL, DISPATCHIS_PATTERN)
+    except Exception:
+        return 0
+    today_files = [f for f in all_files if f["date"].startswith(aest_today)]
+    local = {p.name for p in folder.glob("PUBLIC_DISPATCHIS_*.zip")}
+    count = 0
+    for f in today_files:
+        if f["name"] not in local:
+            try:
+                _download_zip(f["url"], folder / f["name"])
+                count += 1
+            except Exception:
+                pass
+    return count
