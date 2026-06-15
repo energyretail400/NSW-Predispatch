@@ -1,6 +1,11 @@
 import streamlit as st
 
-st.set_page_config(page_title="NSW Price", page_icon="💲", layout="wide")
+st.set_page_config(page_title="AEMO Predispatch", page_icon="⚡", layout="wide")
+
+st.markdown(
+    '<style>div[data-testid="stAppViewContainer"]>section:first-child{padding-top:1rem}</style>',
+    unsafe_allow_html=True,
+)
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -182,7 +187,7 @@ run_label = run_dt.strftime("%d %b %Y %H:%M") if run_dt and pd.notna(run_dt) els
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.title("NSW — Spot Price Forecast")
+st.title("AEMO Predispatch price signal")
 st.caption(f"Pre-Dispatch run: **{run_label}** | Actual price source: DispatchIS {actual_dt}")
 
 st.divider()
