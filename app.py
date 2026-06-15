@@ -321,7 +321,7 @@ if not df_actual_today.empty:
         fig.add_trace(go.Scatter(
             x=df_act["SETTLEMENTDATE"], y=df_act["RRP"],
             name="Actual (today)",
-            line=dict(color="#0f172a", width=2),
+            line=dict(color="#16a34a", width=2),
             hovertemplate="%{x|%d %b %H:%M}<br>$%{y:,.2f}/MWh<extra>Actual</extra>",
         ))
 
