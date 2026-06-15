@@ -216,11 +216,22 @@ with col_act:
         f'</div>', unsafe_allow_html=True
     )
 
+def _day_label(date) -> str:
+    if date is None:
+        return ""
+    today = pd.Timestamp.now().date()
+    if date == today:
+        return "Today"
+    if date == today + pd.Timedelta(days=1):
+        return "Tomorrow"
+    return pd.Timestamp(date).strftime("%a %-d %b")
+
+
 period_cols = [col_on, col_mp, col_md, col_ep, col_le]
 for col, (code, label, hours, desc, sh, eh) in zip(period_cols, PRICE_PERIODS):
     avg, date = _period_avg(sh, eh)
     val  = f"${avg:,.2f}" if avg is not None else "—"
-    dstr = date.strftime("%d %b") if date else ""
+    day  = _day_label(date)
     clr  = PERIOD_COLOURS[code]
     bg   = _hex_to_rgba(clr, 0.10)
     bdr  = _hex_to_rgba(clr, 0.35)
@@ -232,9 +243,8 @@ for col, (code, label, hours, desc, sh, eh) in zip(period_cols, PRICE_PERIODS):
             f'{code} · {label}</div>'
             f'<div style="font-size:11px;color:#64748b;margin-top:2px">{hours}</div>'
             f'<div style="font-size:22px;font-weight:700;color:#0f172a;margin-top:6px">{val}</div>'
-            f'<div style="font-size:11px;color:#94a3b8;margin-top:2px">avg $/MWh · {dstr}</div>'
-            f'<div style="font-size:11px;color:#64748b;margin-top:6px;font-style:italic;border-top:1px solid {bdr};padding-top:6px">'
-            f'{desc}</div>'
+            f'<div style="font-size:12px;color:#64748b;font-weight:600;margin-top:4px">{day}</div>'
+            f'<div style="font-size:11px;color:#94a3b8">avg $/MWh</div>'
             f'</div>', unsafe_allow_html=True
         )
 
