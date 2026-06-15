@@ -189,26 +189,53 @@ st.divider()
 
 
 # ── Metric cards ──────────────────────────────────────────────────────────────
-def _period_avg(start_h: int, end_h: int):
-    now = pd.Timestamp.now()
+_now          = pd.Timestamp.now()
+_today_date   = _now.date()
+_tomorrow_date = (_now + pd.Timedelta(days=1)).date()
+
+
+def _period_avg_for_date(target_date, start_h: int, end_h: int):
     if end_h == 24:
         hmask = df_pd["PERIODID"].dt.hour >= start_h
     else:
         hmask = (df_pd["PERIODID"].dt.hour >= start_h) & (df_pd["PERIODID"].dt.hour < end_h)
-    sub = df_pd.loc[(df_pd["PERIODID"] >= now) & hmask].dropna(subset=["RRP"])
-    if sub.empty:
-        return None, None
-    d = sub["PERIODID"].dt.date.min()
-    avg = sub[sub["PERIODID"].dt.date == d]["RRP"].mean()
-    return avg, d
+    date_mask = df_pd["PERIODID"].dt.date == target_date
+    if target_date == _today_date:
+        sub = df_pd.loc[date_mask & hmask & (df_pd["PERIODID"] >= _now)].dropna(subset=["RRP"])
+    else:
+        sub = df_pd.loc[date_mask & hmask].dropna(subset=["RRP"])
+    return sub["RRP"].mean() if not sub.empty else None
 
 
-col_act, col_on, col_mp, col_md, col_ep, col_le = st.columns(6)
+def _render_card(col, code, label, hours, avg, day_str, is_active=False):
+    val = f"${avg:,.2f}" if avg is not None else "—"
+    clr = PERIOD_COLOURS[code]
+    bg  = _hex_to_rgba(clr, 0.10)
+    bdr = _hex_to_rgba(clr, 0.35)
+    badge = (
+        f'<span style="background:{clr};color:#fff;font-size:9px;'
+        f'padding:1px 6px;border-radius:3px;margin-left:5px;vertical-align:middle">NOW</span>'
+    ) if is_active else ""
+    with col:
+        st.markdown(
+            f'<div style="background:{bg};border:1px solid {bdr};'
+            f'border-left:4px solid {clr};border-radius:8px;padding:14px 16px;text-align:center">'
+            f'<div style="font-size:12px;font-weight:700;color:{clr};text-transform:uppercase;letter-spacing:1px">'
+            f'{code} · {label}{badge}</div>'
+            f'<div style="font-size:11px;color:#64748b;margin-top:2px">{hours}</div>'
+            f'<div style="font-size:22px;font-weight:700;color:#0f172a;margin-top:6px">{val}</div>'
+            f'<div style="font-size:12px;color:#64748b;font-weight:600;margin-top:4px">{day_str}</div>'
+            f'<div style="font-size:11px;color:#94a3b8">avg $/MWh</div>'
+            f'</div>', unsafe_allow_html=True
+        )
 
-with col_act:
+
+# Actual price card
+_act_col, _ = st.columns([1, 4])
+with _act_col:
     val = f"${actual_rrp:,.2f}" if actual_rrp is not None else "—"
     st.markdown(
-        f'<div style="background:#0f172a;color:#fff;border-radius:8px;padding:14px 16px;text-align:center;height:100%">'
+        f'<div style="background:#0f172a;color:#fff;border-radius:8px;padding:14px 16px;text-align:center">'
         f'<div style="font-size:11px;opacity:0.7;text-transform:uppercase;letter-spacing:1px">Actual</div>'
         f'<div style="font-size:11px;opacity:0.5;margin-top:2px">{actual_dt}</div>'
         f'<div style="font-size:26px;font-weight:700;margin-top:6px">{val}</div>'
@@ -216,37 +243,32 @@ with col_act:
         f'</div>', unsafe_allow_html=True
     )
 
-def _day_label(date) -> str:
-    if date is None:
-        return ""
-    today = pd.Timestamp.now().date()
-    if date == today:
-        return "Today"
-    if date == today + pd.Timedelta(days=1):
-        return "Tomorrow"
-    return pd.Timestamp(date).strftime("%a %-d %b")
+# Today's remaining/active periods (exclude fully elapsed ones)
+_today_cards = [
+    (code, label, hours, sh, eh,
+     _period_avg_for_date(_today_date, sh, eh),
+     (pd.Timestamp(_today_date) + pd.Timedelta(hours=sh))
+     <= _now <
+     (pd.Timestamp(_today_date) + pd.Timedelta(hours=eh)))
+    for code, label, hours, desc, sh, eh in PRICE_PERIODS
+    if (pd.Timestamp(_today_date) + pd.Timedelta(hours=eh)) > _now
+]
 
+if _today_cards:
+    st.caption("**Today**")
+    _cols = st.columns(len(_today_cards))
+    for _c, (code, label, hours, sh, eh, avg, is_active) in zip(_cols, _today_cards):
+        _render_card(_c, code, label, hours, avg, "Today", is_active)
 
-period_cols = [col_on, col_mp, col_md, col_ep, col_le]
-for col, (code, label, hours, desc, sh, eh) in zip(period_cols, PRICE_PERIODS):
-    avg, date = _period_avg(sh, eh)
-    val  = f"${avg:,.2f}" if avg is not None else "—"
-    day  = _day_label(date)
-    clr  = PERIOD_COLOURS[code]
-    bg   = _hex_to_rgba(clr, 0.10)
-    bdr  = _hex_to_rgba(clr, 0.35)
-    with col:
-        st.markdown(
-            f'<div style="background:{bg};border:1px solid {bdr};'
-            f'border-left:4px solid {clr};border-radius:8px;padding:14px 16px;text-align:center">'
-            f'<div style="font-size:12px;font-weight:700;color:{clr};text-transform:uppercase;letter-spacing:1px">'
-            f'{code} · {label}</div>'
-            f'<div style="font-size:11px;color:#64748b;margin-top:2px">{hours}</div>'
-            f'<div style="font-size:22px;font-weight:700;color:#0f172a;margin-top:6px">{val}</div>'
-            f'<div style="font-size:12px;color:#64748b;font-weight:600;margin-top:4px">{day}</div>'
-            f'<div style="font-size:11px;color:#94a3b8">avg $/MWh</div>'
-            f'</div>', unsafe_allow_html=True
-        )
+# Tomorrow's periods — always show all 5
+st.caption("**Tomorrow**")
+_tomorrow_cards = [
+    (code, label, hours, sh, eh, _period_avg_for_date(_tomorrow_date, sh, eh))
+    for code, label, hours, desc, sh, eh in PRICE_PERIODS
+]
+_cols = st.columns(5)
+for _c, (code, label, hours, sh, eh, avg) in zip(_cols, _tomorrow_cards):
+    _render_card(_c, code, label, hours, avg, "Tomorrow")
 
 st.divider()
 
