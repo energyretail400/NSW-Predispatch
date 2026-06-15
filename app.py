@@ -189,8 +189,10 @@ st.divider()
 
 
 # ── Metric cards ──────────────────────────────────────────────────────────────
-_now          = pd.Timestamp.now()
-_today_date   = _now.date()
+# AEMO market timestamps are AEST (UTC+10, no DST). Use AEST for all "now" comparisons.
+from datetime import datetime, timezone, timedelta as _dtdelta
+_now           = pd.Timestamp(datetime.now(tz=timezone(_dtdelta(hours=10))).replace(tzinfo=None))
+_today_date    = _now.date()
 _tomorrow_date = (_now + pd.Timedelta(days=1)).date()
 
 
