@@ -47,10 +47,13 @@ st.session_state["_nsw_last_refresh"] = refresh_count
 
 
 def _snapshot() -> dict:
+    pd_p  = get_latest_predispatch_local()
+    dis_p = get_latest_dispatchis_local()
+    p5_p  = get_latest_p5min_local()
     return {
-        "pd":  (get_latest_predispatch_local() or "").name if get_latest_predispatch_local() else "",
-        "dis": (get_latest_dispatchis_local()  or "").name if get_latest_dispatchis_local() else "",
-        "p5":  (get_latest_p5min_local()        or "").name if get_latest_p5min_local() else "",
+        "pd":  pd_p.name  if pd_p  else "",
+        "dis": dis_p.name if dis_p else "",
+        "p5":  p5_p.name  if p5_p  else "",
     }
 
 
@@ -156,8 +159,14 @@ if pd_path is None:
     st.stop()
 
 df_pd  = _load_pd(str(pd_path))
-df_p5  = _load_p5(str(p5_path))  if p5_path  else pd.DataFrame()
-df_dis = _load_dis(str(dis_path)) if dis_path else pd.DataFrame()
+try:
+    df_p5  = _load_p5(str(p5_path))  if p5_path  else pd.DataFrame()
+except Exception:
+    df_p5 = pd.DataFrame()
+try:
+    df_dis = _load_dis(str(dis_path)) if dis_path else pd.DataFrame()
+except Exception:
+    df_dis = pd.DataFrame()
 
 actual_rrp = None
 actual_dt  = ""
