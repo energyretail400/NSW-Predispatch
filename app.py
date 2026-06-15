@@ -309,8 +309,8 @@ st.divider()
 
 
 # ── Price chart ───────────────────────────────────────────────────────────────
-st.subheader("Forecast Spot Price — NSW")
-st.caption("Dark = realized today (DispatchIS) | Solid = 30-min pre-dispatch | Dotted = P5MIN (5-min)")
+st.subheader("Realised Spot price and AEMO Predispatch price signal — NSW")
+st.caption("Green = realised today (DispatchIS) | Solid = 30-min pre-dispatch | Dotted = P5MIN (5-min)")
 
 fig = go.Figure()
 
